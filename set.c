@@ -20,8 +20,6 @@ int main(int argc, char *argv[]) {
     int uid= atoi(argv[1]);
     int pid=atoi(argv[2]);
     int opt=atoi(argv[3]);
-    int pipefd[2];
-    char buf;
     
 
 
