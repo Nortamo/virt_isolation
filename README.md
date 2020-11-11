@@ -36,7 +36,7 @@ sudo setcap 'cap_setuid,cap_setgid+pie' set_mappings
 ```
 ### Running
 ```
-virt squashfs_file mount_point cmd <optional cmd args>
+./virt squashfs_file mount_point cmd <optional cmd args>
 ```
 
 
