@@ -181,7 +181,7 @@ int main(int argc, char *argv[]) {
         // Set mapping and tell the parent that we are done
         // gids are mapped 1 to 1
         // map starting uid to 0 and the rest 1 to 1
-        sprintf(cmd,"./set %d %d 0 %d",o_uid,p_pid,fallback);
+        sprintf(cmd,"./set_mappings %d %d 0 %d",o_uid,p_pid,fallback);
         int status=system(cmd);
         send_exit_status(msg_pipe,status); 
         tell_done(pipefd); 
@@ -196,7 +196,7 @@ int main(int argc, char *argv[]) {
         // Wait for the child to do the id mapping
         wait_for_action(pipefd,&buf);
         
-        set_ret=get_set_exit_status(msg_pipe,"./set");
+        set_ret=get_set_exit_status(msg_pipe,"./set_mappings");
         if(set_ret==10){
         fprintf(stderr,"set binary missing cababilities\nFalling back to self set\n");
         fprintf(stderr,"Only primary uid and gid will be mapped\n");
@@ -239,7 +239,7 @@ int main(int argc, char *argv[]) {
                 // gids are mapped 1 to 1
                 // uid mapping is reversed so that we are back to our
                 // original uid
-                sprintf(cmd,"./set %d %d 1 %d",o_uid,p_pid,fallback);
+                sprintf(cmd,"./set_mappings %d %d 1 %d",o_uid,p_pid,fallback);
                 int status=system(cmd);
                 send_exit_status(msg_pipe,status); 
                 tell_done(pipefd);
@@ -250,7 +250,7 @@ int main(int argc, char *argv[]) {
                 // revert back to our original uid 
                 unshare(CLONE_NEWUSER); 
                 wait_for_action(pipefd,&buf);
-                set_ret=get_set_exit_status(msg_pipe,"./set");
+                set_ret=get_set_exit_status(msg_pipe,"./set_mappings");
                 if(set_ret==10){
                     self_set(1,o_uid,default_gid);
                 }
