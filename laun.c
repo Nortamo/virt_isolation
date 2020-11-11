@@ -14,6 +14,32 @@
 #include <sys/capability.h>
 #include <sys/stat.h>
 #include <stdlib.h>
+#include <signal.h>
+
+
+void wait_for_action( int * pfd, char t_buf){
+    close(pfd[1]); 
+    while (read(pfd[0], &t_buf, 1) > 0){}
+    close(pfd[0]);
+}
+
+void tell_done(int *pfd){
+    close(pfd[0]);              /* Close unused read end */
+    write(pfd[1], "D", 1);
+    close(pfd[1]);               
+}
+
+void check_fork(int child_pid){
+    if(child_pid==-1){
+        fprintf(stderr, "%s", "The call to fork() has failed.\n");
+        exit(EXIT_FAILURE);
+    }  
+}
+void check_pipe(int pipe_ret){
+   fprintf(stderr, "%s", "The call to pipe() has failed.\n");           
+   exit(EXIT_FAILURE);
+}
+
 
 int main(int argc, char *argv[]) {
     int pipefd[2];
@@ -51,8 +77,7 @@ int main(int argc, char *argv[]) {
     
     // Wait for child to set first mappings
     close(pipefd[1]); 
-    while (read(pipefd[0], &buf, 1) > 0){ 
-    }
+    while (read(pipefd[0], &buf, 1) > 0){}
     close(pipefd[0]);
    
     pid_t c_cpid;
@@ -60,7 +85,18 @@ int main(int argc, char *argv[]) {
     char c_buf;
     char c_cmd[100];
     int c_p_pid=getpid();
-    if (pipe(c_pipefd) == -1)          /* An error has occurred. */
+    int l_pid=fork();
+    if(l_pid==0){
+    prctl(PR_SET_PDEATHSIG, SIGHUP);
+    int ret=execl("/usr/bin/squashfuse","/usr/bin/squashfuse","-f","tmd.sqfs", "/mnt" ,(char*) NULL);
+    if(ret==-1){
+        printf("FAILED:\n");
+    }
+  }
+ 
+    else{   
+ 
+  if (pipe(c_pipefd) == -1)          /* An error has occurred. */
   {
    fprintf(stderr, "%s", "The call to pipe() in child has failed.\n");           
    exit(EXIT_FAILURE);
@@ -81,10 +117,13 @@ int main(int argc, char *argv[]) {
     }
  else{
     unshare(CLONE_NEWUSER); 
-    close(pipefd[1]); 
-    while (read(pipefd[0], &buf, 1) > 0){ 
+    close(c_pipefd[1]); 
+    while (read(c_pipefd[0], &c_buf, 1) > 0){ 
     }
     execvp(argv[1],argv+1);
     }
+
+}
+
  }
 }
