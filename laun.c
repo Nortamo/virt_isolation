@@ -75,6 +75,28 @@ int main(int argc, char *argv[]) {
     int msg_pipe[2];
     char buf;
 
+    if(argc < 4){
+        fprintf(stderr,"At least 4 arguments required:\n");
+        fprintf(stderr,"virt squashfs_image mount_point cmd <optional cmd args>\n");
+        return -1;
+    }
+
+    // Parse arguments
+    // 1 sqfs file name
+    // 2 mount point
+    // 3 program to run and args 
+   
+    const char * sqfs_f=argv[1];
+    const char * mount_p=argv[2];
+    if( access( sqfs_f, F_OK ) == -1 ) {
+        fprintf(stderr,"Can't open squashfs image %s \n",sqfs_f); 
+        return -1;
+    } 
+    if( access( mount_p, F_OK ) == -1 ) {
+        fprintf(stderr,"Mount point %s does not exist \n",mount_p); 
+        return -1;
+    } 
+
     // The starting uid we wish to map back to.
     int o_uid=getuid(); 
     char cmd[100];
@@ -124,8 +146,8 @@ int main(int argc, char *argv[]) {
                     execl("/usr/bin/squashfuse",
                         "/usr/bin/squashfuse",
                         "-f",
-                        "tmd.sqfs",
-                        "/mnt" ,
+                        sqfs_f,
+                        mount_p ,
                         (char*) NULL
                         )
                     ,"execl()",p_pid);
@@ -157,7 +179,11 @@ int main(int argc, char *argv[]) {
                 unshare(CLONE_NEWUSER); 
                 wait_for_action(pipefd,&buf);
                 get_exit_status(msg_pipe,"./set");
-                execvp(argv[1],argv+1);
+                execvp(argv[3],argv+3);
+                // execvp only return if there was an error in launching.
+                fprintf(stderr,"Failed to launch command %s using execvp\n",argv[3]);
+                fprintf(stderr,"Make sure the command exists\n");
+                return -1;
             }
 
         }
