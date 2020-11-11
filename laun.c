@@ -17,6 +17,57 @@
 #include <signal.h>
 
 
+void check_file_ret(int ret_val,const char * action,const char * file_name){
+    if(ret_val == -1){
+        fprintf(stderr, "Failed to %s file: %s !\n", action,file_name); 
+        exit(EXIT_FAILURE);
+    }
+} 
+
+void self_set(int mode,int uid,int gid){
+    char uid_map[100];
+    char gid_map[100];
+
+    if(mode==0){
+        sprintf(gid_map,"%d %d 1",gid,gid);
+        sprintf(uid_map,"0 %d 1",uid);
+    }
+    else if(mode==1){
+        sprintf(gid_map,"%d %d 1",gid,gid);
+        sprintf(uid_map,"%d 0 1",uid);
+
+    }
+    else{
+        fprintf(stderr,"Unknown mode %d.\n",mode);
+        exit(EXIT_FAILURE);     
+    }
+    size_t gid_len=strlen(gid_map);
+    size_t uid_len=strlen(uid_map);
+    const char * setgroups_f="/proc/self/setgroups";
+    const char * uid_map_f="/proc/self/uid_map";
+    const char * gid_map_f="/proc/self/gid_map";
+    int res;
+    int fd;
+    fd=open(setgroups_f,O_WRONLY);
+    check_file_ret(fd,"open",setgroups_f);
+    res=write(fd,"deny",4);
+    check_file_ret(res,"write to",setgroups_f);
+    close(fd);                             
+    fd=open(uid_map_f,O_WRONLY);
+    check_file_ret(fd,"open",uid_map_f);
+    res=write(fd,uid_map,uid_len);          
+    check_file_ret(res,"write to",uid_map_f);
+    close(fd);                             
+    fd=open(gid_map_f,O_WRONLY);
+    check_file_ret(fd,"open",gid_map_f);
+    res=write(fd,gid_map,gid_len); 
+    check_file_ret(res,"write to",gid_map_f);
+    close(fd);
+
+}
+
+
+
 // Wait until child/parent tells that it's ok to proceed.
 void wait_for_action( int * pfd, char * t_buf){
     close(pfd[1]); 
@@ -31,11 +82,20 @@ void tell_done(int *pfd){
     close(pfd[1]);               
 }
 
-void get_exit_status(int *pfd,const char * cmd){
+int get_set_exit_status(int *pfd,const char * cmd){
         int set_stat;
         close(pfd[1]);
         read(pfd[0],&set_stat,sizeof(int));
-        if(set_stat!=0){
+        
+        // Set was sucessfull 
+        if(set_stat==0){
+           return 0; 
+        }
+
+        else if(set_stat==10){
+            return 10;
+        }
+        else{
             fprintf(stderr, "The command %s has failed.\n", cmd); 
             exit(EXIT_FAILURE);    
         }
@@ -74,6 +134,10 @@ int main(int argc, char *argv[]) {
     int pipefd[2];
     int msg_pipe[2];
     char buf;
+    int set_ret;
+    int default_gid=getgid();
+    int fallback=0;
+
 
     if(argc < 4){
         fprintf(stderr,"At least 4 arguments required:\n");
@@ -117,7 +181,7 @@ int main(int argc, char *argv[]) {
         // Set mapping and tell the parent that we are done
         // gids are mapped 1 to 1
         // map starting uid to 0 and the rest 1 to 1
-        sprintf(cmd,"./set %d %d 0",o_uid,p_pid);
+        sprintf(cmd,"./set %d %d 0 %d",o_uid,p_pid,fallback);
         int status=system(cmd);
         send_exit_status(msg_pipe,status); 
         tell_done(pipefd); 
@@ -131,7 +195,15 @@ int main(int argc, char *argv[]) {
         unshare(CLONE_NEWNS|CLONE_NEWUSER);
         // Wait for the child to do the id mapping
         wait_for_action(pipefd,&buf);
-        get_exit_status(msg_pipe,"./set");
+        
+        set_ret=get_set_exit_status(msg_pipe,"./set");
+        if(set_ret==10){
+        fprintf(stderr,"set binary missing cababilities\nFalling back to self set\n");
+        fprintf(stderr,"Only primary uid and gid will be mapped\n");
+        self_set(0,o_uid,default_gid);
+        fallback=1;
+        }
+
         pid_t c2_pid;
 
         c2_pid = fork();                   
@@ -167,7 +239,7 @@ int main(int argc, char *argv[]) {
                 // gids are mapped 1 to 1
                 // uid mapping is reversed so that we are back to our
                 // original uid
-                sprintf(cmd,"./set %d %d 1",o_uid,p_pid);
+                sprintf(cmd,"./set %d %d 1 %d",o_uid,p_pid,fallback);
                 int status=system(cmd);
                 send_exit_status(msg_pipe,status); 
                 tell_done(pipefd);
@@ -178,7 +250,10 @@ int main(int argc, char *argv[]) {
                 // revert back to our original uid 
                 unshare(CLONE_NEWUSER); 
                 wait_for_action(pipefd,&buf);
-                get_exit_status(msg_pipe,"./set");
+                set_ret=get_set_exit_status(msg_pipe,"./set");
+                if(set_ret==10){
+                    self_set(1,o_uid,default_gid);
+                }
                 execvp(argv[3],argv+3);
                 // execvp only return if there was an error in launching.
                 fprintf(stderr,"Failed to launch command %s using execvp\n",argv[3]);

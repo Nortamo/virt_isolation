@@ -28,12 +28,27 @@ int main(int argc, char *argv[]) {
     int uid= atoi(argv[1]);
     int pid=atoi(argv[2]);
     int mode=atoi(argv[3]);
-    
-    const char * gid_map;
-    // Group mappings are not changed in the new namespace
-    gid_map="0 0 4294967295";
-    size_t gid_len=strlen(gid_map);
+    int fallback=atoi(argv[4]); 
+
+    cap_value_t cap_values[] = {CAP_SETUID, CAP_SETGID};
+    cap_t caps;
+    caps = cap_get_proc();
+    cap_flag_value_t v1,v2;
+    cap_get_flag(caps, cap_values[0], CAP_EFFECTIVE, &v1);
+    cap_get_flag(caps, cap_values[1], CAP_EFFECTIVE, &v2);
+
+    int caps_set=(v1==CAP_SET && v2==CAP_SET);
+
     char uid_map[100];
+    char gid_map[100];
+
+    // If capabilites are set we can map ranges
+    // Otherwise just one uid and gid
+    // caps_set will say true when in the first user namespace
+    if(caps_set && fallback==0){
+
+    // Group mappings are not changed in the new namespace
+    sprintf(gid_map,"%s","0 0 4294967295");
     if(mode==0){
     sprintf(uid_map,"0 %d 1\n%d %d %d\n%d %d %d",uid,1,1,uid-1,uid+1,uid+1,20000000);
     }
@@ -44,6 +59,16 @@ int main(int argc, char *argv[]) {
         fprintf(stderr,"Unknown mode %d.\n",mode);
         return -1;
     }
+    }
+    else{
+        return 10;
+    }
+
+    
+
+
+
+    size_t gid_len=strlen(gid_map);
     size_t uid_len=strlen(uid_map);
     char setgroups_f[100];
     char uid_map_f[100];
