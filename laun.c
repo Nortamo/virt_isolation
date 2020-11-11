@@ -17,113 +17,113 @@
 #include <signal.h>
 
 
-void wait_for_action( int * pfd, char t_buf){
+
+// Wait until child/parent tells that it's ok to proceed.
+void wait_for_action( int * pfd, char * t_buf){
     close(pfd[1]); 
-    while (read(pfd[0], &t_buf, 1) > 0){}
+    while (read(pfd[0], t_buf, 1) > 0){}
     close(pfd[0]);
 }
 
+// Use a pipe to tell the parent/child that they can proceed.
 void tell_done(int *pfd){
-    close(pfd[0]);              /* Close unused read end */
+    close(pfd[0]);              
     write(pfd[1], "D", 1);
     close(pfd[1]);               
 }
 
-void check_fork(int child_pid){
-    if(child_pid==-1){
-        fprintf(stderr, "%s", "The call to fork() has failed.\n");
+// Check return value and exit on failure
+void check_ret(int ret_val, const char * fun){
+    if(ret_val == -1){
+        fprintf(stderr, "The call to %s has failed.\n", fun); 
         exit(EXIT_FAILURE);
-    }  
-}
-void check_pipe(int pipe_ret){
-   fprintf(stderr, "%s", "The call to pipe() has failed.\n");           
-   exit(EXIT_FAILURE);
+    }
 }
 
 
 int main(int argc, char *argv[]) {
+    // Used for blocking
     int pipefd[2];
-    pid_t cpid;
     char buf;
+
+    // The starting uid we wish to map back to.
     int o_uid=getuid(); 
     char cmd[100];
+    // pid for the main process.
     int p_pid=getpid();
-    
 
-    if (pipe(pipefd) == -1)          /* An error has occurred. */
-  {
-   fprintf(stderr, "%s", "The call to pipe() has failed.\n");           
-   exit(EXIT_FAILURE);
-  }
- cpid = fork();                   /* fork() returns the child process's PID  */
- if (cpid == -1)                  /* An error has occurred. */
-  {
-   fprintf(stderr, "%s", "The call to fork() has failed.\n");
-   exit(EXIT_FAILURE);
-  }
- if (cpid == 0){
-    
-    // Set mapping and the parent that we are done
-    sprintf(cmd,"./set %d %d 0",o_uid,p_pid);
-    system(cmd);
-    close(pipefd[0]);              /* Close unused read end */
-    write(pipefd[1], "H", 1);
-    close(pipefd[1]);               
-    
-    _exit(EXIT_SUCCESS);
-   }
- else {
-    unshare(CLONE_NEWNS|CLONE_NEWUSER);
-    
-    // Wait for child to set first mappings
-    close(pipefd[1]); 
-    while (read(pipefd[0], &buf, 1) > 0){}
-    close(pipefd[0]);
-   
-    pid_t c_cpid;
-    int c_pipefd[2];
-    char c_buf;
-    char c_cmd[100];
-    int c_p_pid=getpid();
-    int l_pid=fork();
-    if(l_pid==0){
-    prctl(PR_SET_PDEATHSIG, SIGHUP);
-    int ret=execl("/usr/bin/squashfuse","/usr/bin/squashfuse","-f","tmd.sqfs", "/mnt" ,(char*) NULL);
-    if(ret==-1){
-        printf("FAILED:\n");
-    }
-  }
- 
-    else{   
- 
-  if (pipe(c_pipefd) == -1)          /* An error has occurred. */
-  {
-   fprintf(stderr, "%s", "The call to pipe() in child has failed.\n");           
-   exit(EXIT_FAILURE);
-  }
- c_cpid = fork();                   /* fork() returns the child process's PID  */
- if (c_cpid == -1)                  /* An error has occurred. */
-  {
-   fprintf(stderr, "%s", "The call to fork() in child has failed.\n");
-   exit(EXIT_FAILURE);
-  }
- if (c_cpid == 0){
-    sprintf(c_cmd,"./set %d %d 1",o_uid,c_p_pid);
-    system(c_cmd);
-    close(c_pipefd[0]);              /* Close unused read end */
-    write(c_pipefd[1], "H", 1);
-    close(c_pipefd[1]);                
-    _exit(EXIT_SUCCESS);
-    }
- else{
-    unshare(CLONE_NEWUSER); 
-    close(c_pipefd[1]); 
-    while (read(c_pipefd[0], &c_buf, 1) > 0){ 
-    }
-    execvp(argv[1],argv+1);
-    }
 
-}
 
- }
+    pid_t c1_pid;
+    check_ret(pipe(pipefd),"pipe()");       
+    c1_pid = fork();                 
+    check_ret(c1_pid,"fork()");
+
+    // First child process
+    if (c1_pid == 0){
+        // Set mapping and tell the parent that we are done
+        // gids are mapped 1 to 1
+        // map starting uid to 0 and the rest 1 to 1
+        sprintf(cmd,"./set %d %d 0",o_uid,p_pid);
+        system(cmd);
+        tell_done(pipefd); 
+        _exit(EXIT_SUCCESS);
+
+    }
+    // main process
+    else {
+        // Create new user namespace for users and mounts
+        // This way we get uid 0 and mount are private to this process
+        unshare(CLONE_NEWNS|CLONE_NEWUSER);
+        // Wait for the child to do the id mapping
+        wait_for_action(pipefd,&buf);
+
+        pid_t c2_pid;
+        pid_t c_p_pid=getpid();
+
+        c2_pid = fork();                   
+        check_ret(c2_pid,"fork()");
+        // second child process
+        if(c2_pid==0){
+            // Terminate if the parent exits
+            prctl(PR_SET_PDEATHSIG, SIGHUP);
+            // Mount a squashfs file image
+            check_ret(
+                    execl("/usr/bin/squashfuse",
+                        "/usr/bin/squashfuse",
+                        "-f",
+                        "tmd.sqfs",
+                        "/mnt" ,
+                        (char*) NULL
+                        )
+                    ,"execl()");
+        } 
+        // main process
+        else{   
+            pid_t c3_pid;
+            check_ret(pipe(pipefd),"pipe()");      
+            c3_pid = fork();                   
+            check_ret(c3_pid,"fork()");
+            // Third child process
+            if (c3_pid == 0){
+                // Set mapping and tell the parent that we are done
+                // gids are mapped 1 to 1
+                // uid mapping is reversed so that we are back to our
+                // original uid
+                sprintf(cmd,"./set %d %d 1",o_uid,c_p_pid);
+                system(cmd);
+                tell_done(pipefd);
+                _exit(EXIT_SUCCESS);
+            }
+            else{
+                // create a nested user namespace so that we can
+                // revert back to our original uid 
+                unshare(CLONE_NEWUSER); 
+                wait_for_action(pipefd,&buf);
+                execvp(argv[1],argv+1);
+            }
+
+        }
+
+    }
 }
