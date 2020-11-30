@@ -222,14 +222,11 @@ int main(int argc, char *argv[]) {
         kill(c1_pid,SIGUSR1);
         wait();
         get_set_exit_status(msg_pipe,"set_mappings");
-        execvp(argv[1],argv+1);
-    }
-     //   pid_t c2_pid;
+        pid_t c2_pid;
 
-     //   c2_pid = fork();                   
-     //   check_ret(c2_pid,"fork()");
+        c2_pid = fork();                   
+        check_ret(c2_pid,"fork()");
         // second child process
-        /*
         if(c2_pid==0){
             // Terminate if the parent exits
             prctl(PR_SET_PDEATHSIG, SIGHUP);
@@ -239,8 +236,8 @@ int main(int argc, char *argv[]) {
                     execl("/usr/bin/squashfuse",
                         "/usr/bin/squashfuse",
                         "-f",
-                        sqfs_f,
-                        mount_p ,
+                        "tmd.sqfs",
+                        "/mnt" ,
                         (char*) NULL
                         )
                     ,"execl()",parent_pid);
@@ -250,6 +247,4 @@ int main(int argc, char *argv[]) {
             execvp(argv[1],argv+1);
         }
     }
-            execvp(argv[1],argv+1);
-    */
 }
