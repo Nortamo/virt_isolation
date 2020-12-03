@@ -96,7 +96,7 @@ inline int set_mapping(pid_t pid,int uid,int gid,int mode,int cap_enabled){
     if(mode==0){
         if(cap_enabled){
             sprintf(gid_map,"%s","0 0 4294967295");
-            sprintf(uid_map,"0 %d 1\n%d %d %d\n%d %d %ld",uid,1,1,uid-1,uid+1,uid+1,max_uid);
+            sprintf(uid_map,"0 %d 1\n%d %d %d\n%d %d %ld\n%d 0 1",uid,1,1,uid-1,uid+1,uid+1,max_uid,uid);
         }
         else{
             sprintf(gid_map,"%d %d 1",gid,gid);
@@ -108,7 +108,7 @@ inline int set_mapping(pid_t pid,int uid,int gid,int mode,int cap_enabled){
     else if(mode==1){
         if(cap_enabled){
             sprintf(gid_map,"%s","0 0 4294967295");
-            sprintf(uid_map,"%d 0 1\n%d %d %d\n%d %d %ld",uid,1,1,uid-1,uid+1,uid+1,max_uid);
+            sprintf(uid_map,"%d 0 1\n%d %d %d\n%d %d %ld\n0 %d 1",uid,1,1,uid-1,uid+1,uid+1,max_uid,uid);
         }
         else{
             sprintf(gid_map,"%d %d 1",gid,gid);
